@@ -1,0 +1,17 @@
+# Build output
+/target
+
+# Binary outputs
+*.scr
+*.exe
+
+# Font file (embedded in binary via include_bytes!)
+Ekush-Regular.ttf
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

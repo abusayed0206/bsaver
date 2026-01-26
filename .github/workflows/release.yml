@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build Release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+      - name: Create screensaver file
+        run: |
+          Copy-Item target\release\bsaver.exe bsaver.scr
+
+      - name: Get version from tag
+        id: version
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Bangla Screensaver ${{ github.ref_name }}
+          body: |
+            ## বাংলা স্ক্রিনসেভার ${{ github.ref_name }}
+            
+            ### 📥 Installation
+            1. Download `bsaver.scr` below
+            2. Right-click → **Install**
+            3. Or copy to `C:\Windows\System32\`
+            
+            ### ✨ Features
+            - 🕐 Bangla digital clock with Bengali numerals
+            - 📅 Bengali calendar (বঙ্গাব্দ) with timezone awareness
+            - 🌸 Six seasons display (ষড়ঋতু)
+            - 🇧🇩 Bangladesh/India regional calendar support
+            - ⚙️ Customizable colors and fonts
+            
+            ---
+            
+            See [README](https://github.com/abusayed0206/bsaver#readme) for full documentation.
+          files: |
+            bsaver.scr
+            target/release/bsaver.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
