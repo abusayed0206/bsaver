@@ -1,5 +1,5 @@
 //! Font rendering using cosmic-text for proper Bangla text shaping
-//! 
+//!
 //! Memory optimizations:
 //! - Reusable text render buffer to avoid per-render allocations
 //! - SwashCache with periodic cleanup to limit glyph memory
@@ -89,7 +89,7 @@ impl Renderer {
     /// Uses internal reusable buffer to reduce allocations
     pub fn render_text(&mut self, text: &str, font_size: f32) -> (u32, u32, Vec<u8>) {
         self.maybe_cleanup_cache();
-        
+
         let mut font_system = get_font_system().lock().unwrap();
 
         // Use larger line height for Bangla vowel marks (ী, ি, ু, etc.)
@@ -233,7 +233,7 @@ impl Renderer {
         // Measure the widest digit (0-9 and Bengali ০-৯) to determine cell width
         let digit_cell_width = self.measure_max_digit_width(font_size);
         let colon_cell_width = digit_cell_width / 2; // Colon gets narrower cell
-        
+
         // Calculate total width needed
         let mut total_width: u32 = 0;
         for ch in text.chars() {
@@ -243,14 +243,14 @@ impl Renderer {
                 total_width += digit_cell_width;
             }
         }
-        
+
         // Calculate starting x position to center the whole time
         let x_start = if total_width < screen_width {
             ((screen_width - total_width) / 2) as i32
         } else {
             0
         };
-        
+
         // Render each character in its fixed cell
         let mut current_x = x_start;
         for ch in text.chars() {
@@ -259,14 +259,14 @@ impl Renderer {
             } else {
                 digit_cell_width
             };
-            
+
             // Render this character
             let char_str = ch.to_string();
             let (char_width, char_height, char_pixels) = self.render_text(&char_str, font_size);
-            
+
             // Center character within its cell
             let char_x = current_x + ((cell_width as i32 - char_width as i32) / 2);
-            
+
             // Blit the character to the screen buffer
             for ty in 0..char_height {
                 for tx in 0..char_width {
@@ -289,7 +289,7 @@ impl Renderer {
                     }
                 }
             }
-            
+
             current_x += cell_width as i32;
         }
     }
@@ -299,20 +299,22 @@ impl Renderer {
     fn measure_max_digit_width(&mut self, font_size: f32) -> u32 {
         // Use font_size bits as cache key (avoids f32 hashing issues)
         let cache_key = font_size.to_bits();
-        
+
         if let Some(&cached_width) = self.digit_width_cache.get(&cache_key) {
             return cached_width;
         }
-        
-        let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-                      '০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-        
+
+        let digits = [
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '০', '১', '২', '৩', '৪', '৫', '৬',
+            '৭', '৮', '৯',
+        ];
+
         let mut max_width: u32 = 0;
         for digit in digits {
             let (width, _, _) = self.render_text(&digit.to_string(), font_size);
             max_width = max_width.max(width);
         }
-        
+
         // Add small padding to prevent any overlap
         let result = max_width + 2;
         self.digit_width_cache.insert(cache_key, result);

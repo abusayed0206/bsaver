@@ -113,10 +113,10 @@ extern "system" fn settings_wndproc(
 /// Create toggle buttons for settings
 fn create_settings_controls(hwnd: HWND) {
     let config = Config::load();
-    
+
     unsafe {
         let instance = GetModuleHandleW(None).unwrap_or_default();
-        
+
         let y_start = 15;
         let y_gap = 36;
         let btn_width = 310;
@@ -124,38 +124,122 @@ fn create_settings_controls(hwnd: HWND) {
         let x = 15;
 
         // Time display options
-        create_toggle_button(hwnd, instance.into(), x, y_start, btn_width, btn_height, 
-            BTN_SECONDS, "Seconds (সেকেন্ড)", config.show_seconds);
-        
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap, btn_width, btn_height,
-            BTN_TIME_PERIOD, "Time Period (সময়কাল)", config.show_time_period);
-        
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 2, btn_width, btn_height,
-            BTN_DAY, "Day (বার)", config.show_day);
-        
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start,
+            btn_width,
+            btn_height,
+            BTN_SECONDS,
+            "Seconds (সেকেন্ড)",
+            config.show_seconds,
+        );
+
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap,
+            btn_width,
+            btn_height,
+            BTN_TIME_PERIOD,
+            "Time Period (সময়কাল)",
+            config.show_time_period,
+        );
+
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 2,
+            btn_width,
+            btn_height,
+            BTN_DAY,
+            "Day (বার)",
+            config.show_day,
+        );
+
         // Date options
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 3, btn_width, btn_height,
-            BTN_ENGLISH_DATE, "English Date (ইংরেজি তারিখ)", config.show_english_date);
-        
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 4, btn_width, btn_height,
-            BTN_BANGLA_DATE, "Bangla Date (বাংলা তারিখ)", config.show_bangla_date);
-        
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 5, btn_width, btn_height,
-            BTN_SEASON, "Season (ঋতু)", config.show_season);
-        
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 3,
+            btn_width,
+            btn_height,
+            BTN_ENGLISH_DATE,
+            "English Date (ইংরেজি তারিখ)",
+            config.show_english_date,
+        );
+
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 4,
+            btn_width,
+            btn_height,
+            BTN_BANGLA_DATE,
+            "Bangla Date (বাংলা তারিখ)",
+            config.show_bangla_date,
+        );
+
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 5,
+            btn_width,
+            btn_height,
+            BTN_SEASON,
+            "Season (ঋতু)",
+            config.show_season,
+        );
+
         // Format options
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 6, btn_width, btn_height,
-            BTN_12_HOUR, "12-Hour Format (১২ ঘণ্টা)", config.use_12_hour);
-        
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 7, btn_width, btn_height,
-            BTN_BANGLA_NUMS, "Bangla Numbers (বাংলা সংখ্যা)", config.use_bangla_numerals);
-        
-        create_toggle_button(hwnd, instance.into(), x, y_start + y_gap * 8, btn_width, btn_height,
-            BTN_BANGLA_NAMES, "Bangla Names (বাংলা নাম)", config.use_bangla_names);
-        
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 6,
+            btn_width,
+            btn_height,
+            BTN_12_HOUR,
+            "12-Hour Format (১২ ঘণ্টা)",
+            config.use_12_hour,
+        );
+
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 7,
+            btn_width,
+            btn_height,
+            BTN_BANGLA_NUMS,
+            "Bangla Numbers (বাংলা সংখ্যা)",
+            config.use_bangla_numerals,
+        );
+
+        create_toggle_button(
+            hwnd,
+            instance.into(),
+            x,
+            y_start + y_gap * 8,
+            btn_width,
+            btn_height,
+            BTN_BANGLA_NAMES,
+            "Bangla Names (বাংলা নাম)",
+            config.use_bangla_names,
+        );
+
         // Calendar region button (toggles between Bangladesh and India)
         let region_text = format!("Calendar: {} ▼", config.calendar_region.display_name());
-        let region_wide: Vec<u16> = region_text.encode_utf16().chain(std::iter::once(0)).collect();
+        let region_wide: Vec<u16> = region_text
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
         let btn_style = WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32);
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
@@ -171,7 +255,7 @@ fn create_settings_controls(hwnd: HWND) {
             Some(instance.into()),
             None,
         );
-        
+
         // Font size button (cycles through sizes)
         let font_text = format!("Font Size: {} ▼", config.font_size.display_name_en());
         let font_wide: Vec<u16> = font_text.encode_utf16().chain(std::iter::once(0)).collect();
@@ -223,7 +307,7 @@ fn create_toggle_button(
     let indicator = if is_on { "●" } else { "○" };
     let text = format!("{} {}", indicator, label);
     let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    
+
     unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),
@@ -238,14 +322,15 @@ fn create_toggle_button(
             Some(HMENU(id as *mut _)),
             Some(instance),
             None,
-        ).ok()
+        )
+        .ok()
     }
 }
 
 /// Handle button clicks in settings dialog
 fn handle_settings_command(hwnd: HWND, id: i32) {
     let mut config = Config::load();
-    
+
     match id {
         BTN_SECONDS => {
             config.show_seconds = !config.show_seconds;
@@ -255,12 +340,22 @@ fn handle_settings_command(hwnd: HWND, id: i32) {
         BTN_ENGLISH_DATE => {
             config.show_english_date = !config.show_english_date;
             config.save();
-            update_toggle_button(hwnd, BTN_ENGLISH_DATE, "English Date (ইংরেজি তারিখ)", config.show_english_date);
+            update_toggle_button(
+                hwnd,
+                BTN_ENGLISH_DATE,
+                "English Date (ইংরেজি তারিখ)",
+                config.show_english_date,
+            );
         }
         BTN_BANGLA_DATE => {
             config.show_bangla_date = !config.show_bangla_date;
             config.save();
-            update_toggle_button(hwnd, BTN_BANGLA_DATE, "Bangla Date (বাংলা তারিখ)", config.show_bangla_date);
+            update_toggle_button(
+                hwnd,
+                BTN_BANGLA_DATE,
+                "Bangla Date (বাংলা তারিখ)",
+                config.show_bangla_date,
+            );
         }
         BTN_DAY => {
             config.show_day = !config.show_day;
@@ -270,7 +365,12 @@ fn handle_settings_command(hwnd: HWND, id: i32) {
         BTN_TIME_PERIOD => {
             config.show_time_period = !config.show_time_period;
             config.save();
-            update_toggle_button(hwnd, BTN_TIME_PERIOD, "Time Period (সময়কাল)", config.show_time_period);
+            update_toggle_button(
+                hwnd,
+                BTN_TIME_PERIOD,
+                "Time Period (সময়কাল)",
+                config.show_time_period,
+            );
         }
         BTN_SEASON => {
             config.show_season = !config.show_season;
@@ -280,17 +380,32 @@ fn handle_settings_command(hwnd: HWND, id: i32) {
         BTN_12_HOUR => {
             config.use_12_hour = !config.use_12_hour;
             config.save();
-            update_toggle_button(hwnd, BTN_12_HOUR, "12-Hour Format (১২ ঘণ্টা)", config.use_12_hour);
+            update_toggle_button(
+                hwnd,
+                BTN_12_HOUR,
+                "12-Hour Format (১২ ঘণ্টা)",
+                config.use_12_hour,
+            );
         }
         BTN_BANGLA_NUMS => {
             config.use_bangla_numerals = !config.use_bangla_numerals;
             config.save();
-            update_toggle_button(hwnd, BTN_BANGLA_NUMS, "Bangla Numbers (বাংলা সংখ্যা)", config.use_bangla_numerals);
+            update_toggle_button(
+                hwnd,
+                BTN_BANGLA_NUMS,
+                "Bangla Numbers (বাংলা সংখ্যা)",
+                config.use_bangla_numerals,
+            );
         }
         BTN_BANGLA_NAMES => {
             config.use_bangla_names = !config.use_bangla_names;
             config.save();
-            update_toggle_button(hwnd, BTN_BANGLA_NAMES, "Bangla Names (বাংলা নাম)", config.use_bangla_names);
+            update_toggle_button(
+                hwnd,
+                BTN_BANGLA_NAMES,
+                "Bangla Names (বাংলা নাম)",
+                config.use_bangla_names,
+            );
         }
         BTN_CALENDAR_REGION => {
             config.calendar_region = config.calendar_region.toggle();
@@ -314,9 +429,9 @@ fn handle_settings_command(hwnd: HWND, id: i32) {
                 }
             }
         }
-        BTN_CLOSE => {
-            unsafe { let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0)); }
-        }
+        BTN_CLOSE => unsafe {
+            let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+        },
         _ => {}
     }
 }
@@ -326,11 +441,10 @@ fn update_toggle_button(hwnd: HWND, id: i32, label: &str, is_on: bool) {
     let indicator = if is_on { "●" } else { "○" };
     let text = format!("{} {}", indicator, label);
     let text_wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
-    
+
     unsafe {
         if let Ok(btn) = GetDlgItem(Some(hwnd), id) {
             let _ = SetWindowTextW(btn, PCWSTR(text_wide.as_ptr()));
         }
     }
 }
-

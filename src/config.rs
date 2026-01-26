@@ -76,8 +76,8 @@ impl CalendarRegion {
     /// India: GMT+5:30 (19800 seconds)
     pub fn timezone_offset_seconds(&self) -> i32 {
         match self {
-            CalendarRegion::Bangladesh => 6 * 3600,        // +6:00
-            CalendarRegion::India => 5 * 3600 + 30 * 60,   // +5:30
+            CalendarRegion::Bangladesh => 6 * 3600,      // +6:00
+            CalendarRegion::India => 5 * 3600 + 30 * 60, // +5:30
         }
     }
 

@@ -5,8 +5,6 @@
 *.scr
 *.exe
 
-# Font file (embedded in binary via include_bytes!)
-Ekush-Regular.ttf
 
 # IDE
 .vscode/

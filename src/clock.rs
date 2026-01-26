@@ -6,7 +6,8 @@ use chrono::{Datelike, Local, Timelike};
 
 /// Bangla time period names
 const BANGLA_TIME_PERIODS: [&str; 6] = ["ভোর", "সকাল", "দুপুর", "বিকাল", "সন্ধ্যা", "রাত"];
-const ENGLISH_TIME_PERIODS: [&str; 6] = ["Dawn", "Morning", "Noon", "Afternoon", "Evening", "Night"];
+const ENGLISH_TIME_PERIODS: [&str; 6] =
+    ["Dawn", "Morning", "Noon", "Afternoon", "Evening", "Night"];
 
 /// Get time period index based on hour
 fn get_time_period_index(hour: u32) -> usize {
@@ -73,7 +74,13 @@ pub fn get_day_string(config: &Config) -> String {
         get_bangla_weekday(now).to_string()
     } else {
         const ENGLISH_DAYS: [&str; 7] = [
-            "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+            "Sunday",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
         ];
         let weekday = now.weekday().num_days_from_sunday() as usize;
         ENGLISH_DAYS[weekday].to_string()
@@ -93,19 +100,23 @@ pub fn get_day_string(config: &Config) -> String {
 pub fn get_combined_date_string(config: &Config) -> String {
     let now = Local::now();
     let bangla_date = BanglaDate::from_local_with_region(now, config.calendar_region);
-    
+
     let english_part = if config.show_english_date {
-        Some(format_gregorian_date(now, config.use_bangla_names, config.use_bangla_numerals))
+        Some(format_gregorian_date(
+            now,
+            config.use_bangla_names,
+            config.use_bangla_numerals,
+        ))
     } else {
         None
     };
-    
+
     let bangla_part = if config.show_bangla_date {
         Some(bangla_date.format_bangla(config.use_bangla_numerals))
     } else {
         None
     };
-    
+
     match (english_part, bangla_part) {
         (Some(eng), Some(ban)) => format!("{}  |  {}", eng, ban),
         (Some(eng), None) => eng,
@@ -118,13 +129,18 @@ pub fn get_combined_date_string(config: &Config) -> String {
 pub fn get_season_string(config: &Config) -> String {
     let now = Local::now();
     let bangla_date = BanglaDate::from_local_with_region(now, config.calendar_region);
-    
+
     if config.use_bangla_names {
         bangla_date.get_season().to_string()
     } else {
         // English season names
         const ENGLISH_SEASONS: [&str; 6] = [
-            "Summer", "Monsoon", "Autumn", "Late Autumn", "Winter", "Spring"
+            "Summer",
+            "Monsoon",
+            "Autumn",
+            "Late Autumn",
+            "Winter",
+            "Spring",
         ];
         ENGLISH_SEASONS[bangla_date.month / 2].to_string()
     }

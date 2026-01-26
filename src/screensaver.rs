@@ -15,7 +15,10 @@ use windows::{
     Win32::UI::WindowsAndMessaging::*, core::*,
 };
 
-use crate::clock::{get_combined_date_string, get_day_string, get_time_string, get_time_period_string, get_season_string};
+use crate::clock::{
+    get_combined_date_string, get_day_string, get_season_string, get_time_period_string,
+    get_time_string,
+};
 use crate::config::Config;
 use crate::renderer::{Renderer, font_ratios};
 
@@ -52,14 +55,17 @@ impl ScreensaverMode {
 
         // Windows screensaver arguments can be /s, /S, -s, /c:hwnd, /p:hwnd, etc.
         let arg = args[1].to_lowercase();
-        
+
         // Handle both /c and /c:hwnd formats
         if arg.starts_with("/c") || arg.starts_with("-c") {
             ScreensaverMode::Configure
         } else if arg.starts_with("/p") || arg.starts_with("-p") {
             // Extract hwnd from /p:hwnd or /p hwnd
             let hwnd = if arg.contains(':') {
-                arg.split(':').nth(1).and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+                arg.split(':')
+                    .nth(1)
+                    .and_then(|s| s.trim().parse().ok())
+                    .unwrap_or(0)
             } else if arg.len() > 2 {
                 arg[2..].trim().parse().unwrap_or(0)
             } else if args.len() > 2 {
@@ -265,7 +271,7 @@ fn render_clock_content(dc: HDC, width: u32, height: u32) {
     // Calculate font sizes using named constants
     let num_chars = if config.show_seconds { 8.0 } else { 5.0 };
     let target_width = width as f32 / 3.0;
-    
+
     let base_font_size = (target_width / (num_chars * font_ratios::CHAR_WIDTH_RATIO))
         .min(height as f32 * font_ratios::MAX_HEIGHT_RATIO);
     let time_font_size = (base_font_size * config.font_size.multiplier()).max(24.0);
@@ -276,31 +282,31 @@ fn render_clock_content(dc: HDC, width: u32, height: u32) {
     // Use thread-local buffer to avoid per-frame allocation
     let stride = width * 4;
     let buffer_size = (stride * height) as usize;
-    
+
     RENDER_BUFFER.with(|buf| {
         let mut buffer = buf.borrow_mut();
-        
+
         // Resize only if needed (grows but never shrinks)
         if buffer.len() < buffer_size {
             buffer.resize(buffer_size, 0);
         }
-        
+
         // Fill with background color
         let bg = config.background_color;
         for i in 0..((width * height) as usize) {
             let idx = i * 4;
             if idx + 3 < buffer_size {
-                buffer[idx] = bg[2];     // B
+                buffer[idx] = bg[2]; // B
                 buffer[idx + 1] = bg[1]; // G
                 buffer[idx + 2] = bg[0]; // R
-                buffer[idx + 3] = 255;   // A
+                buffer[idx + 3] = 255; // A
             }
         }
 
         // Calculate total content height for vertical centering
         let time_height = (time_font_size * 1.3) as f32;
         let mut total_height = time_height;
-        
+
         if config.show_time_period {
             total_height += period_font_size * 1.2;
         }
@@ -386,7 +392,7 @@ fn render_clock_content(dc: HDC, width: u32, height: u32) {
             },
             ..Default::default()
         };
-        
+
         unsafe {
             SetDIBitsToDevice(
                 dc,
@@ -506,4 +512,3 @@ extern "system" fn preview_wndproc(
         }
     }
 }
-
