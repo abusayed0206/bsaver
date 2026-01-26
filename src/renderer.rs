@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use crate::config::Config;
 
 /// Embedded Ekush font data (~180KB)
-const EKUSH_FONT: &[u8] = include_bytes!("../Ekush-Regular.ttf");
+const EKUSH_FONT: &[u8] = include_bytes!("../font/Ekush-Regular.ttf");
 
 /// Maximum SwashCache render calls before cleanup (limits glyph memory growth)
 const SWASH_CACHE_CLEANUP_INTERVAL: u32 = 500;
