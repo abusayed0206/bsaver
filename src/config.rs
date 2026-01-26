@@ -162,14 +162,12 @@ impl Config {
 
     /// Load configuration from file, or create default if not exists
     pub fn load() -> Self {
-        if let Some(path) = Self::config_path() {
-            if path.exists() {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(config) = serde_json::from_str(&content) {
-                        return config;
-                    }
-                }
-            }
+        if let Some(path) = Self::config_path()
+            && path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+            && let Ok(config) = serde_json::from_str(&content)
+        {
+            return config;
         }
         let config = Self::default();
         config.save(); // Save default config

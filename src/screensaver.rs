@@ -30,7 +30,7 @@ static RENDERER: OnceLock<Mutex<Renderer>> = OnceLock::new();
 
 // Thread-local buffer for rendering to avoid per-frame allocations
 thread_local! {
-    static RENDER_BUFFER: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    static RENDER_BUFFER: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Screensaver operating mode
@@ -74,9 +74,8 @@ impl ScreensaverMode {
                 0
             };
             ScreensaverMode::Preview(hwnd)
-        } else if arg.starts_with("/s") || arg.starts_with("-s") {
-            ScreensaverMode::Screensaver
         } else {
+            // Default to Screensaver mode for /s, -s, or any other argument
             ScreensaverMode::Screensaver
         }
     }
@@ -304,7 +303,7 @@ fn render_clock_content(dc: HDC, width: u32, height: u32) {
         }
 
         // Calculate total content height for vertical centering
-        let time_height = (time_font_size * 1.3) as f32;
+        let time_height = time_font_size * 1.3;
         let mut total_height = time_height;
 
         if config.show_time_period {

@@ -240,7 +240,7 @@ fn create_settings_controls(hwnd: HWND) {
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        let btn_style = WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32);
+        let btn_style = WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON);
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
@@ -293,6 +293,7 @@ fn create_settings_controls(hwnd: HWND) {
 }
 
 /// Create a toggle button with ON/OFF indicator
+#[allow(clippy::too_many_arguments)]
 fn create_toggle_button(
     hwnd: HWND,
     instance: HINSTANCE,
@@ -313,7 +314,7 @@ fn create_toggle_button(
             WINDOW_EX_STYLE::default(),
             w!("BUTTON"),
             PCWSTR(text_wide.as_ptr()),
-            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON as u32 | BS_LEFT as u32),
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_PUSHBUTTON | BS_LEFT),
             x,
             y,
             width,
