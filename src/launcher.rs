@@ -19,14 +19,9 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use windows::{
-    Win32::Foundation::*,
-    Win32::Graphics::Gdi::*,
-    Win32::System::LibraryLoader::GetModuleHandleW,
-    Win32::System::Registry::*,
-    Win32::UI::Input::KeyboardAndMouse::EnableWindow,
-    Win32::UI::Shell::ShellExecuteW,
-    Win32::UI::WindowsAndMessaging::*,
-    core::*,
+    Win32::Foundation::*, Win32::Graphics::Gdi::*, Win32::System::LibraryLoader::GetModuleHandleW,
+    Win32::System::Registry::*, Win32::UI::Input::KeyboardAndMouse::EnableWindow,
+    Win32::UI::Shell::ShellExecuteW, Win32::UI::WindowsAndMessaging::*, core::*,
 };
 
 // Button IDs
@@ -79,8 +74,7 @@ impl Default for GdiResources {
 // Safety: GDI handles are only ever accessed from the main (UI) thread.
 unsafe impl Send for GdiResources {}
 
-static GDI: LazyLock<Mutex<GdiResources>> =
-    LazyLock::new(|| Mutex::new(GdiResources::default()));
+static GDI: LazyLock<Mutex<GdiResources>> = LazyLock::new(|| Mutex::new(GdiResources::default()));
 
 /// Create a font with the given height, weight, and face name.
 ///
@@ -165,10 +159,7 @@ fn get_current_screensaver() -> String {
 /// Check if our screensaver is the currently active one.
 fn is_our_screensaver_set() -> bool {
     let current = get_current_screensaver().to_lowercase();
-    let ours = get_scr_path()
-        .to_string_lossy()
-        .to_lowercase()
-        .to_string();
+    let ours = get_scr_path().to_string_lossy().to_lowercase().to_string();
     !current.is_empty() && current == ours
 }
 
@@ -200,16 +191,10 @@ unsafe fn update_status(hwnd: HWND) {
         } else {
             let current = get_current_screensaver();
             if current.is_empty() {
-                let _ = SetWindowTextW(
-                    h_status,
-                    w!("\u{2022}  কোনো স্ক্রিনসেভার সেট করা নেই"),
-                );
+                let _ = SetWindowTextW(h_status, w!("\u{2022}  কোনো স্ক্রিনসেভার সেট করা নেই"));
                 STATUS_COLOR.set(rgb(140, 148, 160));
             } else {
-                let _ = SetWindowTextW(
-                    h_status,
-                    w!("\u{2022}  অন্য একটি স্ক্রিনসেভার সক্রিয় আছে"),
-                );
+                let _ = SetWindowTextW(h_status, w!("\u{2022}  অন্য একটি স্ক্রিনসেভার সক্রিয় আছে"));
                 STATUS_COLOR.set(rgb(230, 170, 50));
             }
             let _ = EnableWindow(h_btn_set, true);
@@ -247,8 +232,7 @@ unsafe fn set_screensaver(hwnd: HWND) {
         }
 
         let value_name = w!("SCRNSAVE.EXE");
-        let data_bytes =
-            std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
+        let data_bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
         let res = RegSetValueExW(hkey, value_name, Some(0), REG_SZ, Some(data_bytes));
         let _ = RegCloseKey(hkey);
 
@@ -361,15 +345,7 @@ fn to_wide(s: &str) -> Vec<u16> {
 ///
 /// # Safety
 /// `hwnd` must be a valid parent window handle.
-unsafe fn create_button(
-    hwnd: HWND,
-    text: PCWSTR,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
-    id: i32,
-) -> HWND {
+unsafe fn create_button(hwnd: HWND, text: PCWSTR, x: i32, y: i32, w: i32, h: i32, id: i32) -> HWND {
     unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
