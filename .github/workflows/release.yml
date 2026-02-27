@@ -37,6 +37,10 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart('v')
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Build MSIX package
+        run: |
+          .\packaging\build-msix.ps1 -SkipBuild -Version "${{ steps.version.outputs.VERSION }}"
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
@@ -45,9 +49,18 @@ jobs:
             ## বাংলা স্ক্রিনসেভার ${{ github.ref_name }}
             
             ### 📥 Installation
+            
+            **Option A: Windows Store (Recommended)**
+            - Install from [Microsoft Store](https://apps.microsoft.com/detail/9P9FB1WN7PCV)
+            
+            **Option B: Direct Download**
             1. Download `bsaver.scr` below
             2. Right-click → **Install**
             3. Or copy to `C:\Windows\System32\`
+            
+            **Option C: MSIX Package**
+            - Download the `.msix` file and double-click to install
+            - No admin required, installs per-user
             
             ### ✨ Features
             - 🕐 Bangla digital clock with Bengali numerals
@@ -62,6 +75,8 @@ jobs:
           files: |
             bsaver.scr
             target/release/bsaver.exe
+            target/release/BanglaSaver.exe
+            output/BanglaSaver_${{ steps.version.outputs.VERSION }}.0_x64.msix
           draft: false
           prerelease: false
         env:

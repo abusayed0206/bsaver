@@ -1,10 +1,10 @@
 # Build output
 /target
+/output
 
 # Binary outputs
 *.scr
 *.exe
-
 
 # IDE
 .vscode/

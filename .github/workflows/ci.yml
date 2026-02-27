@@ -71,8 +71,15 @@ jobs:
       - name: Build release
         run: cargo build --release --verbose
 
-      - name: Upload artifact
+      - name: Build MSIX package
+        run: |
+          .\packaging\build-msix.ps1 -SkipBuild
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: bsaver-exe
-          path: target/release/bsaver.exe
+          name: bsaver-release
+          path: |
+            target/release/bsaver.exe
+            target/release/BanglaSaver.exe
+            output/*.msix
