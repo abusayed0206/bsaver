@@ -50,24 +50,26 @@ jobs:
             
             ### 📥 Installation
             
-            **Option A: Windows Store (Recommended)**
+            **Option A: Microsoft Store (Recommended)**
             - Install from [Microsoft Store](https://apps.microsoft.com/detail/9P9FB1WN7PCV)
             
             **Option B: Direct Download**
-            1. Download `bsaver.scr` below
-            2. Right-click → **Install**
-            3. Or copy to `C:\Windows\System32\`
+            1. Download `BanglaSaver.exe` and `bsaver.exe` below
+            2. Place them in the same folder
+            3. Run `BanglaSaver.exe` → click **সেট করুন** → approve UAC
             
             **Option C: MSIX Package**
             - Download the `.msix` file and double-click to install
             - No admin required, installs per-user
             
             ### ✨ Features
-            - 🕐 Bangla digital clock with Bengali numerals
+            - 🕐 Bangla digital clock with Bengali numerals (০১২৩৪৫৬৭৮৯)
             - 📅 Bengali calendar (বঙ্গাব্দ) with timezone awareness
             - 🌸 Six seasons display (ষড়ঋতু)
             - 🇧🇩 Bangladesh/India regional calendar support
-            - ⚙️ Customizable colors and fonts
+            - 🖥️ Native launcher UI for easy install/remove/preview
+            - ⚙️ Configurable clock settings (12/24h, font size, colors)
+            - 💨 Statically linked — no runtime dependencies
             
             ---
             
