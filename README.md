@@ -19,9 +19,11 @@ A beautiful Bangla digital clock screensaver for Windows featuring the tradition
 - 📅 **Bengali Calendar** – Shows date in বঙ্গাব্দ with accurate day/month calculations
 - 🌸 **Seasonal Display** – Shows the current Bengali season (ষড়ঋতু)
 - 🇧🇩 **Regional Support** – Choose between Bangladesh and India calendar conventions
-- ⏰ **Timezone Awareness** – Calculates Bengali date based on Bangladesh/India time
-- ⚙️ **Configurable** – Customize colors, fonts, and display options
-- 💨 **Lightweight** – Pure Rust with minimal dependencies (~2MB)
+- ⏰ **Timezone Awareness** – Calculates Bengali date based on Bangladesh/India time, not local system time
+- ⚙️ **Configurable** – Toggle seconds, 12/24h, Bangla numerals, date/day/season, font size, and colors
+- 🖥️ **Launcher UI** – Native Win32 launcher (`BanglaSaver.exe`) to install, remove, preview, and configure
+- 💨 **Lightweight** – Pure Rust, statically linked, no runtime dependencies (~2 MB)
+- 🏪 **Microsoft Store** – Available on the [Microsoft Store](https://apps.microsoft.com/detail/9P9FB1WN7PCV)
 
 ---
 
@@ -33,82 +35,85 @@ A beautiful Bangla digital clock screensaver for Windows featuring the tradition
 
 ## 📥 Installation
 
-### Option 1: Download Release (Recommended)
+### Option 1: Microsoft Store (Recommended)
+
+Install from the [**Microsoft Store**](https://apps.microsoft.com/detail/9P9FB1WN7PCV) — automatic updates, no admin required.
+
+### Option 2: Direct Download
 
 1. Go to [**Releases**](https://github.com/abusayed0206/bsaver/releases)
-2. Download the latest `bsaver.scr` file
-3. Right-click `bsaver.scr` → **Install**
-4. Or copy to `C:\Windows\System32\` for system-wide installation
+2. Download `BanglaSaver.exe` and `bsaver.exe`
+3. Place them in the same folder
+4. Run `BanglaSaver.exe` → click **সেট করুন** (Set) → approve the UAC prompt
+5. The launcher copies the screensaver to `System32` and activates it
 
-### Option 2: Build from Source
+### Option 3: Build from Source
 
-**Prerequisites:**
-- [Rust](https://rustup.rs/) (stable, 2024 edition)
-- Windows 10/11
+**Prerequisites:** [Rust](https://rustup.rs/) (stable, 2024 edition) · Windows 10/11
 
 ```powershell
-# Clone the repository
 git clone https://github.com/abusayed0206/bsaver.git
 cd bsaver
-
-# Build release version
 cargo build --release
 
-# The screensaver will be at: target\release\bsaver.exe
-# Rename to .scr for Windows to recognize it as a screensaver
-copy target\release\bsaver.exe bsaver.scr
+# Two binaries are produced:
+#   target\release\bsaver.exe      – the screensaver
+#   target\release\BanglaSaver.exe – the launcher / installer UI
 ```
 
 ---
 
 ## 🚀 Usage
 
-### Run as Screensaver
+### Via the Launcher (BanglaSaver.exe)
 
-1. **Install**: Right-click `bsaver.scr` → **Install**
-2. Go to **Settings** → **Personalization** → **Lock screen** → **Screen saver settings**
-3. Select **"Bangla Screensaver"** from the dropdown
-4. Click **Preview** to test, **Settings** to configure
+The launcher provides a graphical interface with six actions:
 
-### Configure Settings
+| Button | Action |
+|--------|--------|
+| **সেট করুন** | Install screensaver to System32 and activate (UAC required) |
+| **সরান** | Remove screensaver from System32 and deactivate (UAC required) |
+| **প্রিভিউ দেখুন** | Preview the screensaver fullscreen |
+| **ঘড়ি সেটিংস** | Open the clock configuration dialog |
+| **স্ক্রিনসেভার সেটিংস** | Open Windows Screensaver Settings (`desk.cpl`) |
+| **গিটহাব** | Open this repository in your browser |
 
-**Via Settings Dialog:**
-- Right-click `bsaver.scr` → **Configure**
-- Or from Screen Saver Settings → **Settings** button
+### Via Command Line
 
-**Via Command Line:**
 ```powershell
-# Preview screensaver
-cmd /c "bsaver.scr /p"
+# Run screensaver fullscreen
+bsaver.exe /s
 
-# Open settings dialog
-cmd /c "bsaver.scr /c"
+# Open configuration dialog
+bsaver.exe /c
 
-# Run screensaver full-screen
-cmd /c "bsaver.scr /s"
+# Preview in a parent window (used by Windows Settings)
+bsaver.exe /p <hwnd>
 ```
 
 ### Configuration File
 
 Settings are stored at:
 ```
-%APPDATA%\bsaver\bsaver\config.json
+%APPDATA%\abusayed\bsaver\config\config.json
 ```
 
-**Example Configuration:**
+**Example configuration (defaults):**
 ```json
 {
-  "time_color": [255, 255, 255],
-  "date_color": [200, 200, 200],
-  "day_season_color": [180, 180, 180],
-  "background_color": [0, 0, 0],
-  "time_font_size": 120,
-  "date_font_size": 60,
-  "day_season_font_size": 45,
   "show_seconds": true,
-  "show_date": true,
-  "show_day_season": true,
-  "calendar_region": "Bangladesh"
+  "show_english_date": true,
+  "show_bangla_date": true,
+  "show_day": true,
+  "show_time_period": true,
+  "show_season": true,
+  "use_bangla_numerals": true,
+  "use_bangla_names": true,
+  "use_12_hour": true,
+  "calendar_region": "Bangladesh",
+  "font_size": "Regular",
+  "text_color": [255, 255, 255],
+  "background_color": [0, 0, 0]
 }
 ```
 
@@ -118,12 +123,12 @@ Settings are stored at:
 
 Choose between **Bangladesh** and **India** calendar conventions:
 
-| Setting | Pohela Boishakh | Timezone |
-|---------|-----------------|----------|
-| Bangladesh | April 14 | UTC+6 |
-| India | April 15 | UTC+5:30 |
+| Setting | Pohela Boishakh | Timezone | Month lengths |
+|---------|-----------------|----------|---------------|
+| Bangladesh | April 14 | UTC+6 | Revised 2019 (first 5 months = 31 days) |
+| India | April 15 | UTC+5:30 | Same structure |
 
-The Bengali date is always calculated based on the selected region's timezone, not your local time.
+The Bengali date is always calculated based on the selected region's timezone, not your local system time.
 
 ---
 
@@ -131,14 +136,19 @@ The Bengali date is always calculated based on the selected region's timezone, n
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `time_color` | RGB color for clock | White `[255,255,255]` |
-| `date_color` | RGB color for date | Light gray `[200,200,200]` |
-| `background_color` | RGB background | Black `[0,0,0]` |
-| `time_font_size` | Clock font size | `120` |
-| `show_seconds` | Display seconds | `true` |
-| `show_date` | Display Bengali date | `true` |
-| `show_day_season` | Display day & season | `true` |
+| `show_seconds` | Display seconds in clock | `true` |
+| `show_english_date` | Show Gregorian date | `true` |
+| `show_bangla_date` | Show Bengali calendar date | `true` |
+| `show_day` | Show day of week | `true` |
+| `show_time_period` | Show সকাল/দুপুর/বিকাল/রাত | `true` |
+| `show_season` | Show Bengali season (ঋতু) | `true` |
+| `use_bangla_numerals` | Use ০১২৩৪৫৬৭৮৯ instead of 0123456789 | `true` |
+| `use_bangla_names` | Use Bengali month/day names | `true` |
+| `use_12_hour` | 12-hour format | `true` |
 | `calendar_region` | `"Bangladesh"` or `"India"` | `"Bangladesh"` |
+| `font_size` | `"Small"`, `"Regular"`, `"Larger"`, `"ExtraLarge"` | `"Regular"` |
+| `text_color` | RGB color for text | `[255, 255, 255]` |
+| `background_color` | RGB color for background | `[0, 0, 0]` |
 
 ---
 
@@ -147,17 +157,11 @@ The Bengali date is always calculated based on the selected region's timezone, n
 ### Build Commands
 
 ```powershell
-# Development build
-cargo build
-
-# Release build (optimized)
-cargo build --release
-
-# Run tests
-cargo test
-
-# Check for issues
-cargo clippy
+cargo build                    # Dev build
+cargo build --release          # Optimized release (~2 MB)
+cargo test --verbose           # Run tests (calendar/timezone coverage)
+cargo clippy -- -D warnings    # Lint (CI enforces zero warnings)
+cargo fmt --all -- --check     # Format check
 ```
 
 ### Project Structure
@@ -165,16 +169,41 @@ cargo clippy
 ```
 bsaver/
 ├── src/
-│   ├── main.rs          # Entry point, command parsing
-│   ├── screensaver.rs   # Windows screensaver API
-│   ├── renderer.rs      # Text rendering with cosmic-text
-│   ├── clock.rs         # Clock layout and formatting
-│   ├── bangla_date.rs   # Bengali calendar calculations
-│   ├── config.rs        # Configuration management
-│   └── settings.rs      # Settings dialog UI
+│   ├── main.rs          # Entry point — parses /s, /p, /c args
+│   ├── screensaver.rs   # Win32 window, message loop, double-buffered GDI
+│   ├── renderer.rs      # Text rendering with cosmic-text (Bangla shaping)
+│   ├── clock.rs         # Time/date/day/season formatting
+│   ├── bangla_date.rs   # Gregorian → Bengali calendar conversion
+│   ├── config.rs        # Config struct with serde JSON serialization
+│   ├── settings.rs      # Native Win32 settings dialog
+│   └── launcher.rs      # BanglaSaver launcher UI (install/remove/preview)
+├── font/
+│   └── Ekush-Regular.ttf  # Embedded Bangla font
+├── assets/
+│   └── BanglaSaver.ico    # Application icon
+├── packaging/
+│   ├── AppxManifest.xml   # MSIX manifest
+│   └── build-msix.ps1    # MSIX packaging script
+├── build.rs               # Embeds icon as Win32 resource
 ├── Cargo.toml
-└── README.md
+└── .cargo/config.toml     # Static CRT linking
 ```
+
+### Two Binaries
+
+| Binary | Source | Purpose |
+|--------|--------|---------|
+| `bsaver` | `src/main.rs` | The screensaver itself (`.scr`) |
+| `BanglaSaver` | `src/launcher.rs` | Launcher / installer UI |
+
+### Key Design Decisions
+
+- **Static CRT** (`+crt-static`) — eliminates `vcruntime140.dll` dependency for Store certification
+- **Embedded font** — Ekush is loaded via `include_bytes!`, no system font enumeration
+- **BGRA pixel buffer** — CPU-rendered to `Vec<u8>`, blitted via `SetDIBitsToDevice`
+- **Registry via `reg.exe`** — bypasses MSIX registry virtualization so Windows screensaver service sees the changes
+- **`SystemParametersInfoW`** — notifies Windows immediately after screensaver install/remove
+- **No `static mut`** — Rust 2024 edition; uses `OnceLock`, `LazyLock`, `thread_local!` with `Cell`
 
 ---
 
@@ -182,10 +211,8 @@ bsaver/
 
 - **OS**: Windows 10/11
 - **Display**: Any resolution (auto-scales)
-- **Memory**: ~12MB private / ~24MB working set (scales with resolution)
-- **Disk**: ~2MB
-
-> **Note**: Memory optimizations include embedded-only font loading (no system fonts loaded), reusable frame buffer, and periodic glyph cache cleanup. The frame buffer uses ~8MB at 1080p.
+- **Memory**: ~12 MB private working set at 1080p
+- **Disk**: ~2 MB
 
 ---
 
@@ -203,14 +230,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## 🙏 Credits
 
-- **Font**: [Ekush](https://codepotro.com/font/ekush/)
-
+- **Font**: [Ekush](https://codepotro.com/font/ekush/) by Code Potro
 
 ---
 

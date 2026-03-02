@@ -1,12 +1,19 @@
 //! BanglaSaver Launcher - UI for managing the screensaver
 //!
 //! Provides a Win32 window with buttons to:
-//! - Set bsaver as the system screensaver (HKCU registry)
-//! - Remove the screensaver registration
+//! - Install bsaver as a system screensaver (copies to System32, needs elevation)
+//! - Remove the screensaver (deletes from System32, needs elevation)
 //! - Open Windows screensaver settings
 //! - Preview the screensaver
 //!
-//! All operations are per-user (HKCU) - no admin required.
+//! The `.scr` file must live in `%WINDIR%\System32` for the Windows
+//! Screensaver Settings dialog to enumerate it. Copying there requires
+//! admin privileges, so the launcher requests UAC elevation via
+//! `ShellExecuteW` with the `"runas"` verb.
+//!
+//! Registry writes use `reg.exe` (a system binary outside the MSIX
+//! container) so that `HKCU\Control Panel\Desktop` modifications are
+//! visible to the Windows screensaver service and not virtualized.
 //!
 //! # Safety
 //! This module uses Win32 APIs extensively. All unsafe operations are wrapped
@@ -15,12 +22,14 @@
 #![windows_subsystem = "windows"]
 
 use std::cell::Cell;
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use windows::{
     Win32::Foundation::*, Win32::Graphics::Gdi::*, Win32::System::LibraryLoader::GetModuleHandleW,
-    Win32::System::Registry::*, Win32::UI::Input::KeyboardAndMouse::EnableWindow,
+    Win32::UI::Controls::DRAWITEMSTRUCT, Win32::UI::Input::KeyboardAndMouse::EnableWindow,
     Win32::UI::Shell::ShellExecuteW, Win32::UI::WindowsAndMessaging::*, core::*,
 };
 
@@ -31,6 +40,13 @@ const IDC_BTN_SETTINGS: i32 = 1003;
 const IDC_BTN_PREVIEW: i32 = 1004;
 const IDC_BTN_BSETTINGS: i32 = 1005;
 const IDC_STATUS: i32 = 1006;
+const IDC_BTN_GITHUB: i32 = 1007;
+
+/// Embedded Ekush font data — the same Bangla font used by the screensaver.
+const EKUSH_FONT: &[u8] = include_bytes!("../font/Ekush-Regular.ttf");
+
+/// Prevent child `reg.exe` process from flashing a console window.
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 /// COLORREF helper: 0x00BBGGRR
 const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
@@ -76,6 +92,74 @@ unsafe impl Send for GdiResources {}
 
 static GDI: LazyLock<Mutex<GdiResources>> = LazyLock::new(|| Mutex::new(GdiResources::default()));
 
+/// Window background color (#161B22).
+const BG_COLOR: COLORREF = rgb(22, 27, 34);
+
+/// Colors for an owner-drawn button.
+struct ButtonColors {
+    bg: COLORREF,
+    bg_pressed: COLORREF,
+    bg_disabled: COLORREF,
+    text: COLORREF,
+    text_disabled: COLORREF,
+    border: COLORREF,
+}
+
+/// Return the color scheme for a given button control ID.
+fn get_button_colors(ctl_id: u32) -> ButtonColors {
+    match ctl_id as i32 {
+        IDC_BTN_SET => ButtonColors {
+            bg: rgb(35, 134, 54), // green primary
+            bg_pressed: rgb(27, 107, 43),
+            bg_disabled: rgb(28, 56, 36),
+            text: rgb(255, 255, 255),
+            text_disabled: rgb(100, 140, 110),
+            border: rgb(46, 160, 67),
+        },
+        IDC_BTN_REMOVE => ButtonColors {
+            bg: rgb(55, 30, 34), // muted red card
+            bg_pressed: rgb(45, 24, 28),
+            bg_disabled: rgb(35, 28, 30),
+            text: rgb(248, 81, 73),
+            text_disabled: rgb(100, 60, 58),
+            border: rgb(75, 40, 44),
+        },
+        IDC_BTN_PREVIEW => ButtonColors {
+            bg: rgb(26, 46, 68), // blue card
+            bg_pressed: rgb(20, 38, 56),
+            bg_disabled: rgb(24, 32, 40),
+            text: rgb(88, 166, 255),
+            text_disabled: rgb(60, 80, 100),
+            border: rgb(36, 60, 88),
+        },
+        IDC_BTN_BSETTINGS => ButtonColors {
+            bg: rgb(45, 26, 68), // purple card
+            bg_pressed: rgb(37, 21, 56),
+            bg_disabled: rgb(32, 26, 40),
+            text: rgb(188, 140, 255),
+            text_disabled: rgb(80, 60, 100),
+            border: rgb(60, 36, 88),
+        },
+        IDC_BTN_GITHUB => ButtonColors {
+            bg: rgb(33, 38, 45), // dark neutral card
+            bg_pressed: rgb(27, 31, 36),
+            bg_disabled: rgb(28, 32, 39),
+            text: rgb(139, 148, 158),
+            text_disabled: rgb(72, 79, 88),
+            border: rgb(48, 54, 61),
+        },
+        _ => ButtonColors {
+            // neutral (Settings)
+            bg: rgb(33, 38, 45),
+            bg_pressed: rgb(27, 31, 36),
+            bg_disabled: rgb(28, 32, 39),
+            text: rgb(201, 209, 217),
+            text_disabled: rgb(72, 79, 88),
+            border: rgb(48, 54, 61),
+        },
+    }
+}
+
 /// Create a font with the given height, weight, and face name.
 ///
 /// # Safety
@@ -116,7 +200,7 @@ unsafe fn set_control_font(hwnd: HWND, font: HFONT) {
     }
 }
 
-/// Get the path to bsaver.exe alongside this executable.
+/// Get the path to bsaver.exe alongside this executable (source for install).
 fn get_scr_path() -> PathBuf {
     let mut exe_path = std::env::current_exe().unwrap_or_default();
     exe_path.pop();
@@ -124,43 +208,52 @@ fn get_scr_path() -> PathBuf {
     exe_path
 }
 
+/// Get the destination path in System32 where the `.scr` must be installed
+/// for Windows Screensaver Settings to enumerate it.
+fn get_system32_scr_path() -> PathBuf {
+    let windir = std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".to_string());
+    PathBuf::from(windir)
+        .join("System32")
+        .join("BanglaSaver.scr")
+}
+
 /// Read current screensaver path from HKCU registry.
+///
+/// Uses `reg.exe` (a system binary outside the MSIX container) so that we
+/// always read the **real** registry, not the per-app virtualized hive.
 fn get_current_screensaver() -> String {
-    unsafe {
-        let mut hkey = HKEY::default();
-        let subkey = w!("Control Panel\\Desktop");
-        let res = RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_READ, &mut hkey);
-        if res.is_err() {
-            return String::new();
-        }
+    let Ok(output) = Command::new("reg")
+        .args(["query", r"HKCU\Control Panel\Desktop", "/v", "SCRNSAVE.EXE"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    else {
+        return String::new();
+    };
 
-        let mut buffer = [0u16; 260];
-        let mut size = (buffer.len() * 2) as u32;
-        let value_name = w!("SCRNSAVE.EXE");
-        let res = RegQueryValueExW(
-            hkey,
-            value_name,
-            None,
-            None,
-            Some(buffer.as_mut_ptr() as *mut u8),
-            Some(&mut size),
-        );
-        let _ = RegCloseKey(hkey);
-
-        if res.is_err() {
-            return String::new();
-        }
-
-        let len = (size as usize / 2).saturating_sub(1);
-        String::from_utf16_lossy(&buffer[..len])
+    if !output.status.success() {
+        return String::new();
     }
+
+    // Parse: "    SCRNSAVE.EXE    REG_SZ    C:\path\to\file.scr"
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(pos) = trimmed.find("REG_SZ") {
+            let value = trimmed[pos + "REG_SZ".len()..].trim();
+            if !value.is_empty() {
+                return value.to_string();
+            }
+        }
+    }
+    String::new()
 }
 
 /// Check if our screensaver is the currently active one.
+/// Compares the registry value against the System32 installation path.
 fn is_our_screensaver_set() -> bool {
     let current = get_current_screensaver().to_lowercase();
-    let ours = get_scr_path().to_string_lossy().to_lowercase().to_string();
-    !current.is_empty() && current == ours
+    let system32_path = get_system32_scr_path().to_string_lossy().to_lowercase();
+    !current.is_empty() && current == system32_path
 }
 
 /// Update the status label and button states.
@@ -168,8 +261,9 @@ fn is_our_screensaver_set() -> bool {
 /// # Safety
 /// All stored HWNDs must be valid (set during WM_CREATE).
 unsafe fn update_status(hwnd: HWND) {
-    let scr_path = get_scr_path();
-    let scr_exists = scr_path.exists();
+    let src_exists = get_scr_path().exists();
+    let installed = get_system32_scr_path().exists();
+    let active = is_our_screensaver_set();
 
     let h_status = H_STATUS.get();
     let h_btn_set = H_BTN_SET.get();
@@ -177,15 +271,22 @@ unsafe fn update_status(hwnd: HWND) {
     let h_btn_preview = H_BTN_PREVIEW.get();
 
     unsafe {
-        if !scr_exists {
+        if !src_exists {
             let _ = SetWindowTextW(h_status, w!("\u{26A0}  স্ক্রিনসেভার ফাইল পাওয়া যায়নি"));
             STATUS_COLOR.set(rgb(230, 170, 50));
             let _ = EnableWindow(h_btn_set, false);
+            let _ = EnableWindow(h_btn_remove, installed);
             let _ = EnableWindow(h_btn_preview, false);
-        } else if is_our_screensaver_set() {
+        } else if installed && active {
             let _ = SetWindowTextW(h_status, w!("\u{2714}  বাংলাসেভার সক্রিয় আছে"));
             STATUS_COLOR.set(rgb(60, 179, 113));
             let _ = EnableWindow(h_btn_set, false);
+            let _ = EnableWindow(h_btn_remove, true);
+            let _ = EnableWindow(h_btn_preview, true);
+        } else if installed {
+            let _ = SetWindowTextW(h_status, w!("\u{2022}  ইনস্টল আছে, তবে সক্রিয় নয়"));
+            STATUS_COLOR.set(rgb(230, 170, 50));
+            let _ = EnableWindow(h_btn_set, true);
             let _ = EnableWindow(h_btn_remove, true);
             let _ = EnableWindow(h_btn_preview, true);
         } else {
@@ -205,92 +306,172 @@ unsafe fn update_status(hwnd: HWND) {
     }
 }
 
-/// Set bsaver as the screensaver via HKCU registry.
+/// Install the screensaver to System32 and activate it.
+///
+/// 1. Requests UAC elevation via `ShellExecuteW("runas")`
+/// 2. Copies `bsaver.exe` → `%WINDIR%\System32\BanglaSaver.scr`
+/// 3. Sets `HKCU\Control Panel\Desktop\SCRNSAVE.EXE` via `reg.exe`
+/// 4. Enables the screensaver (`ScreenSaveActive = 1`)
+///
+/// The copy to System32 is required because the Windows Screensaver
+/// Settings dialog only enumerates `.scr` files from that directory.
+/// Registry writes use `reg.exe` (not direct Win32 API) to bypass
+/// MSIX registry virtualization.
 ///
 /// # Safety
 /// `hwnd` must be a valid window handle.
 unsafe fn set_screensaver(hwnd: HWND) {
-    let scr_path = get_scr_path();
-    let scr_path_str = scr_path.to_string_lossy().to_string();
-    let wide: Vec<u16> = scr_path_str
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
+    let src = get_scr_path();
+    if !src.exists() {
+        unsafe {
+            let _ = MessageBoxW(
+                Some(hwnd),
+                w!("bsaver.exe পাওয়া যায়নি।"),
+                w!("সমস্যা"),
+                MB_ICONERROR,
+            );
+        }
+        return;
+    }
+
+    let dst = get_system32_scr_path();
+    let dst_str = dst.to_string_lossy();
+
+    // Build an elevated cmd.exe command that:
+    //   1. Copies the binary to System32 as a .scr
+    //   2. Sets SCRNSAVE.EXE registry value to the System32 path
+    //   3. Enables the screensaver
+    //   4. Sets a default timeout (300 seconds = 5 minutes) so the
+    //      screensaver actually activates after idle — without this,
+    //      Windows may never trigger it.
+    let args = format!(
+        r#"/c copy /Y "{}" "{}" && reg add "HKCU\Control Panel\Desktop" /v SCRNSAVE.EXE /t REG_SZ /d "{}" /f && reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /t REG_SZ /d 1 /f && reg add "HKCU\Control Panel\Desktop" /v ScreenSaveTimeOut /t REG_SZ /d 300 /f"#,
+        src.display(),
+        dst_str,
+        dst_str
+    );
+    let wide_args: Vec<u16> = args.encode_utf16().chain(std::iter::once(0)).collect();
 
     unsafe {
-        let mut hkey = HKEY::default();
-        let subkey = w!("Control Panel\\Desktop");
-        let res = RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_SET_VALUE, &mut hkey);
-        if res.is_err() {
-            let _ = MessageBoxW(
-                Some(hwnd),
-                w!("রেজিস্ট্রি খোলা যায়নি।"),
-                w!("সমস্যা"),
-                MB_ICONERROR,
-            );
+        // Request elevation — shows the UAC consent dialog
+        let ret = ShellExecuteW(
+            Some(hwnd),
+            w!("runas"),
+            w!("cmd.exe"),
+            PCWSTR(wide_args.as_ptr()),
+            None,
+            SW_HIDE,
+        );
+
+        // ShellExecuteW returns > 32 on success
+        if (ret.0 as usize) <= 32 {
+            // User cancelled UAC or an error occurred
             return;
         }
 
-        let value_name = w!("SCRNSAVE.EXE");
-        let data_bytes = std::slice::from_raw_parts(wide.as_ptr() as *const u8, wide.len() * 2);
-        let res = RegSetValueExW(hkey, value_name, Some(0), REG_SZ, Some(data_bytes));
-        let _ = RegCloseKey(hkey);
-
-        if res.is_err() {
-            let _ = MessageBoxW(
-                Some(hwnd),
-                w!("রেজিস্ট্রি লেখা যায়নি।"),
-                w!("সমস্যা"),
-                MB_ICONERROR,
-            );
-            return;
+        // Poll for System32 copy to appear (cmd.exe runs async)
+        for _ in 0..25 {
+            if dst.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
         }
-
-        // Enable screensaver in Windows
-        let _ = SystemParametersInfoW(SPI_SETSCREENSAVEACTIVE, 1, None, SPIF_SENDCHANGE);
 
         update_status(hwnd);
-        let _ = MessageBoxW(
-            Some(hwnd),
-            w!("বাংলাসেভার স্ক্রিনসেভার হিসেবে সেট হয়েছে!"),
-            w!("সফল"),
-            MB_ICONINFORMATION,
-        );
+
+        if dst.exists() {
+            // Notify Windows that screensaver settings changed.
+            // Without this, the system may not pick up the registry
+            // changes until the next logon.
+            let _ = SystemParametersInfoW(
+                SPI_SETSCREENSAVEACTIVE,
+                1, // TRUE — enable
+                None,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0x01 | 0x02), // SPIF_UPDATEINIFILE | SPIF_SENDCHANGE
+            );
+            let _ = MessageBoxW(
+                Some(hwnd),
+                w!("বাংলাসেভার স্ক্রিনসেভার হিসেবে সেট হয়েছে!"),
+                w!("সফল"),
+                MB_ICONINFORMATION,
+            );
+        } else {
+            let _ = MessageBoxW(
+                Some(hwnd),
+                w!("ইনস্টল করা যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।"),
+                w!("সমস্যা"),
+                MB_ICONERROR,
+            );
+        }
     }
 }
 
-/// Remove the screensaver from registry.
+/// Remove the screensaver from System32 and deactivate it.
+///
+/// 1. Requests UAC elevation
+/// 2. Deletes `BanglaSaver.scr` from System32
+/// 3. Removes `SCRNSAVE.EXE` registry value
+/// 4. Disables the screensaver (`ScreenSaveActive = 0`)
 ///
 /// # Safety
 /// `hwnd` must be a valid window handle.
 unsafe fn remove_screensaver(hwnd: HWND) {
+    let dst = get_system32_scr_path();
+    let dst_str = dst.to_string_lossy();
+
+    // Elevated command: delete .scr + clean registry
+    let args = format!(
+        r#"/c del /F "{}" && reg delete "HKCU\Control Panel\Desktop" /v SCRNSAVE.EXE /f && reg add "HKCU\Control Panel\Desktop" /v ScreenSaveActive /t REG_SZ /d 0 /f"#,
+        dst_str
+    );
+    let wide_args: Vec<u16> = args.encode_utf16().chain(std::iter::once(0)).collect();
+
     unsafe {
-        let mut hkey = HKEY::default();
-        let subkey = w!("Control Panel\\Desktop");
-        let res = RegOpenKeyExW(HKEY_CURRENT_USER, subkey, Some(0), KEY_SET_VALUE, &mut hkey);
-        if res.is_err() {
-            let _ = MessageBoxW(
-                Some(hwnd),
-                w!("রেজিস্ট্রি খোলা যায়নি।"),
-                w!("সমস্যা"),
-                MB_ICONERROR,
-            );
+        let ret = ShellExecuteW(
+            Some(hwnd),
+            w!("runas"),
+            w!("cmd.exe"),
+            PCWSTR(wide_args.as_ptr()),
+            None,
+            SW_HIDE,
+        );
+
+        if (ret.0 as usize) <= 32 {
             return;
         }
 
-        let _ = RegDeleteValueW(hkey, w!("SCRNSAVE.EXE"));
-        let _ = RegCloseKey(hkey);
-
-        // Disable screensaver in Windows
-        let _ = SystemParametersInfoW(SPI_SETSCREENSAVEACTIVE, 0, None, SPIF_SENDCHANGE);
+        // Wait for deletion to complete
+        for _ in 0..25 {
+            if !dst.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
 
         update_status(hwnd);
-        let _ = MessageBoxW(
-            Some(hwnd),
-            w!("স্ক্রিনসেভার সরিয়ে দেওয়া হয়েছে।"),
-            w!("সরানো হয়েছে"),
-            MB_ICONINFORMATION,
-        );
+
+        if !dst.exists() {
+            // Notify Windows that the screensaver has been deactivated.
+            let _ = SystemParametersInfoW(
+                SPI_SETSCREENSAVEACTIVE,
+                0, // FALSE — disable
+                None,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0x01 | 0x02), // SPIF_UPDATEINIFILE | SPIF_SENDCHANGE
+            );
+            let _ = MessageBoxW(
+                Some(hwnd),
+                w!("স্ক্রিনসেভার সরিয়ে দেওয়া হয়েছে।"),
+                w!("সরানো হয়েছে"),
+                MB_ICONINFORMATION,
+            );
+        } else {
+            let _ = MessageBoxW(
+                Some(hwnd),
+                w!("সরানো যায়নি। অনুগ্রহ করে আবার চেষ্টা করুন।"),
+                w!("সমস্যা"),
+                MB_ICONERROR,
+            );
+        }
     }
 }
 
@@ -336,6 +517,20 @@ unsafe fn open_bsaver_settings() {
     }
 }
 
+/// Open the GitHub repository page in the default browser.
+unsafe fn open_github() {
+    unsafe {
+        let _ = ShellExecuteW(
+            None,
+            w!("open"),
+            w!("https://github.com/abusayed0206/bsaver"),
+            None,
+            None,
+            SW_SHOW,
+        );
+    }
+}
+
 /// Helper to convert &str to wide string buffer for DrawTextW.
 fn to_wide(s: &str) -> Vec<u16> {
     s.encode_utf16().collect()
@@ -346,12 +541,13 @@ fn to_wide(s: &str) -> Vec<u16> {
 /// # Safety
 /// `hwnd` must be a valid parent window handle.
 unsafe fn create_button(hwnd: HWND, text: PCWSTR, x: i32, y: i32, w: i32, h: i32, id: i32) -> HWND {
+    // BS_OWNERDRAW = 0x0B — we paint the button ourselves in WM_DRAWITEM
     unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE(0),
             w!("BUTTON"),
             text,
-            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(0x0000_0000),
+            WS_CHILD | WS_VISIBLE | WINDOW_STYLE(0x0000_000B),
             x,
             y,
             w,
@@ -416,12 +612,12 @@ unsafe extern "system" fn wnd_proc(
             {
                 let mut gdi = GDI.lock().unwrap();
                 unsafe {
-                    gdi.brush_bg = CreateSolidBrush(rgb(22, 27, 34));
-                    gdi.font_title = make_font(36, FW_BOLD.0 as i32, w!("Segoe UI"));
-                    gdi.font_subtitle = make_font(18, FW_NORMAL.0 as i32, w!("Segoe UI"));
-                    gdi.font_normal = make_font(17, FW_NORMAL.0 as i32, w!("Segoe UI"));
-                    gdi.font_btn = make_font(19, FW_SEMIBOLD.0 as i32, w!("Segoe UI"));
-                    gdi.font_footer = make_font(13, FW_NORMAL.0 as i32, w!("Segoe UI"));
+                    gdi.brush_bg = CreateSolidBrush(BG_COLOR);
+                    gdi.font_title = make_font(38, FW_BOLD.0 as i32, w!("Ekush"));
+                    gdi.font_subtitle = make_font(18, FW_NORMAL.0 as i32, w!("Ekush"));
+                    gdi.font_normal = make_font(17, FW_NORMAL.0 as i32, w!("Ekush"));
+                    gdi.font_btn = make_font(18, FW_SEMIBOLD.0 as i32, w!("Ekush"));
+                    gdi.font_footer = make_font(13, FW_NORMAL.0 as i32, w!("Ekush"));
                 }
             }
             let gdi = GDI.lock().unwrap();
@@ -430,22 +626,26 @@ unsafe extern "system" fn wnd_proc(
             let _ = unsafe { GetClientRect(hwnd, &mut client_rect) };
             let client_w = client_rect.right;
 
-            let btn_w = 340;
-            let btn_h = 44;
-            let left_margin = (client_w - btn_w) / 2;
-            let mut y = 180;
-            let gap = 12;
+            // ── Grid layout constants ──
+            let margin = 40;
+            let content_w = client_w - margin * 2;
+            let col_gap = 14;
+            let col_w = (content_w - col_gap) / 2;
+            let row_gap = 12;
+            let grid_btn_h = 58;
+            let x_left = margin;
+            let x_right = margin + col_w + col_gap;
 
             unsafe {
-                // Status label (SS_CENTER = 0x0001)
+                // ── Status label (SS_CENTER = 0x0001) ──
                 let h_status = CreateWindowExW(
                     WINDOW_EX_STYLE(0),
                     w!("STATIC"),
                     w!(""),
                     WS_CHILD | WS_VISIBLE | WINDOW_STYLE(0x0001),
-                    left_margin - 20,
-                    y,
-                    btn_w + 40,
+                    margin,
+                    148,
+                    content_w,
                     28,
                     Some(hwnd),
                     Some(HMENU(IDC_STATUS as *mut _)),
@@ -455,79 +655,169 @@ unsafe extern "system" fn wnd_proc(
                 .unwrap_or_default();
                 set_control_font(h_status, gdi.font_normal);
                 H_STATUS.set(h_status);
-                y += 46;
 
-                // Set Screensaver
+                // ── Row 1: Set · Remove ──
+                let y1 = 186;
                 let h_btn_set = create_button(
                     hwnd,
-                    w!("\u{25B6}  স্ক্রিনসেভার সেট করুন"),
-                    left_margin,
-                    y,
-                    btn_w,
-                    btn_h,
+                    w!("সেট করুন"),
+                    x_left,
+                    y1,
+                    col_w,
+                    grid_btn_h,
                     IDC_BTN_SET,
                 );
-                set_control_font(h_btn_set, gdi.font_btn);
                 H_BTN_SET.set(h_btn_set);
-                y += btn_h + gap;
 
-                // Remove Screensaver
                 let h_btn_remove = create_button(
                     hwnd,
-                    w!("\u{2716}  স্ক্রিনসেভার সরান"),
-                    left_margin,
-                    y,
-                    btn_w,
-                    btn_h,
+                    w!("সরান"),
+                    x_right,
+                    y1,
+                    col_w,
+                    grid_btn_h,
                     IDC_BTN_REMOVE,
                 );
-                set_control_font(h_btn_remove, gdi.font_btn);
                 H_BTN_REMOVE.set(h_btn_remove);
-                y += btn_h + gap;
 
-                // Screensaver Settings (Windows control panel)
-                let h_btn_settings = create_button(
-                    hwnd,
-                    w!("\u{2699}  স্ক্রিনসেভার সেটিংস"),
-                    left_margin,
-                    y,
-                    btn_w,
-                    btn_h,
-                    IDC_BTN_SETTINGS,
-                );
-                set_control_font(h_btn_settings, gdi.font_btn);
-                y += btn_h + gap;
-
-                // Preview
+                // ── Row 2: Preview · Clock Config ──
+                let y2 = y1 + grid_btn_h + row_gap;
                 let h_btn_preview = create_button(
                     hwnd,
-                    w!("\u{25B7}  প্রিভিউ দেখুন"),
-                    left_margin,
-                    y,
-                    btn_w,
-                    btn_h,
+                    w!("প্রিভিউ দেখুন"),
+                    x_left,
+                    y2,
+                    col_w,
+                    grid_btn_h,
                     IDC_BTN_PREVIEW,
                 );
-                set_control_font(h_btn_preview, gdi.font_btn);
                 H_BTN_PREVIEW.set(h_btn_preview);
-                y += btn_h + gap;
 
-                // Bsaver clock configuration
-                let h_btn_bsettings = create_button(
+                let _h_btn_bsettings = create_button(
                     hwnd,
-                    w!("\u{2699}  ঘড়ি কনফিগারেশন"),
-                    left_margin,
-                    y,
-                    btn_w,
-                    btn_h,
+                    w!("ঘড়ি সেটিংস"),
+                    x_right,
+                    y2,
+                    col_w,
+                    grid_btn_h,
                     IDC_BTN_BSETTINGS,
                 );
-                set_control_font(h_btn_bsettings, gdi.font_btn);
+
+                // ── Row 3: Settings · GitHub ──
+                let y3 = y2 + grid_btn_h + row_gap;
+                let _h_btn_settings = create_button(
+                    hwnd,
+                    w!("স্ক্রিনসেভার সেটিংস"),
+                    x_left,
+                    y3,
+                    col_w,
+                    grid_btn_h,
+                    IDC_BTN_SETTINGS,
+                );
+
+                let _h_btn_github = create_button(
+                    hwnd,
+                    w!("গিটহাব"),
+                    x_right,
+                    y3,
+                    col_w,
+                    grid_btn_h,
+                    IDC_BTN_GITHUB,
+                );
             }
 
             drop(gdi); // release lock before update_status
             unsafe { update_status(hwnd) };
             LRESULT(0)
+        }
+
+        WM_DRAWITEM => {
+            // Owner-drawn button painting with rounded rectangles & accent colors
+            let dis = unsafe { &*(lparam.0 as *const DRAWITEMSTRUCT) };
+            let id = dis.CtlID;
+            let hdc = dis.hDC;
+            let rc = dis.rcItem;
+
+            // ODS_SELECTED = 0x0001, ODS_DISABLED = 0x0004
+            let is_pressed = (dis.itemState.0 & 0x0001) != 0;
+            let is_disabled = (dis.itemState.0 & 0x0004) != 0;
+
+            let colors = get_button_colors(id);
+            let bg = if is_disabled {
+                colors.bg_disabled
+            } else if is_pressed {
+                colors.bg_pressed
+            } else {
+                colors.bg
+            };
+            let txt = if is_disabled {
+                colors.text_disabled
+            } else {
+                colors.text
+            };
+
+            unsafe {
+                // Clear the entire rect with parent bg so rounded corners look clean
+                let parent_brush = CreateSolidBrush(BG_COLOR);
+                FillRect(hdc, &rc, parent_brush);
+                let _ = DeleteObject(HGDIOBJ(parent_brush.0));
+
+                // Rounded rectangle button face
+                let btn_brush = CreateSolidBrush(bg);
+                let border_pen = CreatePen(PS_SOLID, 1, colors.border);
+                let old_brush = SelectObject(hdc, HGDIOBJ(btn_brush.0));
+                let old_pen = SelectObject(hdc, HGDIOBJ(border_pen.0));
+                let _ = RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, 14, 14);
+                SelectObject(hdc, old_brush);
+                SelectObject(hdc, old_pen);
+                let _ = DeleteObject(HGDIOBJ(btn_brush.0));
+                let _ = DeleteObject(HGDIOBJ(border_pen.0));
+
+                // Text
+                SetBkMode(hdc, TRANSPARENT);
+                SetTextColor(hdc, txt);
+                let gdi = GDI.lock().unwrap();
+                SelectObject(hdc, HGDIOBJ(gdi.font_btn.0));
+
+                let mut text_buf = [0u16; 256];
+                let len = GetWindowTextW(dis.hwndItem, &mut text_buf);
+                let mut text_slice = text_buf[..len as usize].to_vec();
+
+                let mut text_rc = RECT {
+                    left: rc.left + 12,
+                    top: rc.top,
+                    right: rc.right - 12,
+                    bottom: rc.bottom,
+                };
+                DrawTextW(
+                    hdc,
+                    &mut text_slice,
+                    &mut text_rc,
+                    DT_CENTER | DT_SINGLELINE | DT_VCENTER,
+                );
+
+                // Subtle focus indicator (thin inner border)
+                if (dis.itemState.0 & 0x0010) != 0 {
+                    // ODS_FOCUS
+                    let focus_pen = CreatePen(PS_DOT, 1, colors.text);
+                    let ofp = SelectObject(hdc, HGDIOBJ(focus_pen.0));
+                    let null_brush = GetStockObject(NULL_BRUSH);
+                    let ofb = SelectObject(hdc, null_brush);
+                    let _ = RoundRect(
+                        hdc,
+                        rc.left + 3,
+                        rc.top + 3,
+                        rc.right - 3,
+                        rc.bottom - 3,
+                        10,
+                        10,
+                    );
+                    SelectObject(hdc, ofp);
+                    SelectObject(hdc, ofb);
+                    let _ = DeleteObject(HGDIOBJ(focus_pen.0));
+                }
+            }
+            LRESULT(1)
         }
 
         WM_COMMAND => {
@@ -539,6 +829,7 @@ unsafe extern "system" fn wnd_proc(
                     IDC_BTN_SETTINGS => open_screensaver_settings(),
                     IDC_BTN_PREVIEW => preview_screensaver(),
                     IDC_BTN_BSETTINGS => open_bsaver_settings(),
+                    IDC_BTN_GITHUB => open_github(),
                     _ => {}
                 }
             }
@@ -606,17 +897,10 @@ unsafe extern "system" fn wnd_proc(
                     DT_CENTER | DT_SINGLELINE,
                 );
 
-                // Separator line
-                let pen = CreatePen(PS_SOLID, 1, rgb(55, 62, 72));
-                SelectObject(hdc, HGDIOBJ(pen.0));
-                let _ = MoveToEx(hdc, 50, 155, None);
-                let _ = LineTo(hdc, client_w - 50, 155);
-                let _ = DeleteObject(HGDIOBJ(pen.0));
-
                 // Footer
                 let mut rc_footer = RECT {
                     left: 0,
-                    top: client_rect.bottom - 32,
+                    top: client_rect.bottom - 30,
                     right: client_w,
                     bottom: client_rect.bottom - 8,
                 };
@@ -684,6 +968,33 @@ pub fn run_launcher() -> windows::core::Result<()> {
         let instance = GetModuleHandleW(None)?;
         let window_class = w!("BanglaSaverLauncher");
 
+        // Register the embedded Ekush font with GDI so CreateFontW can find it.
+        // AddFontMemResourceEx makes the font available for this process only —
+        // no system-wide install, no cleanup needed (removed on process exit).
+        let num_fonts: u32 = 0;
+        let _font_handle = AddFontMemResourceEx(
+            EKUSH_FONT.as_ptr() as *const _,
+            EKUSH_FONT.len() as u32,
+            None,
+            &num_fonts,
+        );
+
+        // Load the embedded icon (resource ID 1, set by build.rs / winresource)
+        #[allow(clippy::manual_dangling_ptr)]
+        let icon_handle = LoadImageW(
+            Some(instance.into()),
+            PCWSTR(1 as *const u16), // MAKEINTRESOURCE(1)
+            IMAGE_ICON,
+            0,
+            0,
+            LR_DEFAULTSIZE,
+        );
+        let hicon = if let Ok(h) = icon_handle {
+            HICON(h.0)
+        } else {
+            LoadIconW(None, IDI_APPLICATION)?
+        };
+
         let wc = WNDCLASSW {
             style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(wnd_proc),
@@ -691,6 +1002,7 @@ pub fn run_launcher() -> windows::core::Result<()> {
             hCursor: LoadCursorW(None, IDC_ARROW)?,
             hbrBackground: HBRUSH(std::ptr::null_mut()),
             lpszClassName: window_class,
+            hIcon: hicon,
             ..Default::default()
         };
 
@@ -698,14 +1010,29 @@ pub fn run_launcher() -> windows::core::Result<()> {
 
         let screen_w = GetSystemMetrics(SM_CXSCREEN);
         let screen_h = GetSystemMetrics(SM_CYSCREEN);
-        let win_w = 480;
-        let win_h = 580;
+
+        // Compute exact outer window size from desired client area.
+        // Layout: flag(22+30) title(60-110) subtitle(110-140) status(148-176)
+        // grid: y1=186, 3 rows×58h + 2 gaps×12 → bottom = 186+58×3+12×2 = 384
+        // footer: 12px gap + 22px text + 8px padding → 384+42 = 426
+        let client_w = 500;
+        let client_h = 426;
+        let style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+        let mut rc_size = RECT {
+            left: 0,
+            top: 0,
+            right: client_w,
+            bottom: client_h,
+        };
+        let _ = AdjustWindowRectEx(&mut rc_size, style, false, WINDOW_EX_STYLE(0));
+        let win_w = rc_size.right - rc_size.left;
+        let win_h = rc_size.bottom - rc_size.top;
 
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             window_class,
             w!("বাংলাসেভার"),
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+            style,
             (screen_w - win_w) / 2,
             (screen_h - win_h) / 2,
             win_w,
@@ -715,6 +1042,20 @@ pub fn run_launcher() -> windows::core::Result<()> {
             Some(instance.into()),
             None,
         )?;
+
+        // Set both large and small icons on the window
+        SendMessageW(
+            hwnd,
+            WM_SETICON,
+            Some(WPARAM(1)),
+            Some(LPARAM(hicon.0 as isize)),
+        ); // ICON_BIG
+        SendMessageW(
+            hwnd,
+            WM_SETICON,
+            Some(WPARAM(0)),
+            Some(LPARAM(hicon.0 as isize)),
+        ); // ICON_SMALL
 
         let _ = ShowWindow(hwnd, SW_SHOW);
         let _ = UpdateWindow(hwnd);
@@ -730,7 +1071,7 @@ pub fn run_launcher() -> windows::core::Result<()> {
 }
 
 fn main() {
-    if let Err(e) = run_launcher() {
-        eprintln!("Error: {:?}", e);
-    }
+    // Errors are silently ignored — stderr is unavailable with
+    // #![windows_subsystem = "windows"].
+    let _ = run_launcher();
 }

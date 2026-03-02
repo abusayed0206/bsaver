@@ -17,7 +17,7 @@
   <Properties>
     <DisplayName>BanglaSaver</DisplayName>
     <PublisherDisplayName>abusayed.dev</PublisherDisplayName>
-    <Description>বাংলা স্ক্রিনসেভার - A beautiful Bangla digital clock screensaver for Windows featuring Bengali calendar, Bangla numerals, and seasonal display.</Description>
+    <Description>বাংলা স্ক্রিনসেভার: A beautiful Bangla digital clock screensaver for Windows featuring Bengali calendar, Bangla numerals, and seasonal display.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
 
     <!--

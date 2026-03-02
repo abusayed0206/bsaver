@@ -292,14 +292,9 @@ fn render_clock_content(dc: HDC, width: u32, height: u32) {
 
         // Fill with background color
         let bg = config.background_color;
-        for i in 0..((width * height) as usize) {
-            let idx = i * 4;
-            if idx + 3 < buffer_size {
-                buffer[idx] = bg[2]; // B
-                buffer[idx + 1] = bg[1]; // G
-                buffer[idx + 2] = bg[0]; // R
-                buffer[idx + 3] = 255; // A
-            }
+        let pixel = [bg[2], bg[1], bg[0], 255u8]; // BGRA
+        for chunk in buffer[..buffer_size].chunks_exact_mut(4) {
+            chunk.copy_from_slice(&pixel);
         }
 
         // Calculate total content height for vertical centering

@@ -124,11 +124,9 @@ impl Renderer {
 
         // Fill with background color but alpha = 0 (transparent for blitting)
         let bg = self.config.background_color;
-        for i in 0..(width * height) as usize {
-            pixels[i * 4] = bg[2]; // B
-            pixels[i * 4 + 1] = bg[1]; // G
-            pixels[i * 4 + 2] = bg[0]; // R
-            pixels[i * 4 + 3] = 0; // A = 0 for transparent background
+        let pixel = [bg[2], bg[1], bg[0], 0u8]; // BGRA, A=0 transparent
+        for chunk in pixels.chunks_exact_mut(4) {
+            chunk.copy_from_slice(&pixel);
         }
 
         // Render text using cosmic-text's draw callback

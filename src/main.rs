@@ -32,14 +32,12 @@ use screensaver::ScreensaverMode;
 fn main() {
     let mode = ScreensaverMode::from_args();
 
-    let result = match mode {
+    // Errors are silently ignored — stderr is not available with
+    // #![windows_subsystem = "windows"] and a screensaver has no
+    // reasonable way to report errors to the user.
+    let _ = match mode {
         ScreensaverMode::Screensaver => screensaver::run_screensaver(),
         ScreensaverMode::Preview(hwnd) => screensaver::run_preview(hwnd),
         ScreensaverMode::Configure => settings::show_config_dialog(),
     };
-
-    if let Err(e) = result {
-        // Log error (in a real app, write to a log file)
-        eprintln!("Error: {:?}", e);
-    }
 }
