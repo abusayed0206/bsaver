@@ -1,6 +1,6 @@
 [package]
 name = "bsaver"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2024"
 description = "A beautiful Bangla digital clock screensaver for Windows"
 authors = ["Abu Sayed <hello@sayed.app>"]
